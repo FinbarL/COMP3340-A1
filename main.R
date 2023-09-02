@@ -61,6 +61,7 @@ calc_jaccard_col <- function(input_matrix){
 calc_mst <- function(dist_matrix) {
     graph <- graph.adjacency(as.matrix(dist_matrix), mode = "undirected", weighted = TRUE)
     mst <- mst(graph)
+    E(mst)$weight <- round(E(mst)$weight, 3)
     return(mst)
 }
 calc_rng <- function(dist_matrix) {
@@ -258,7 +259,7 @@ print_line("Ex. 5 Hamming Distance Matrix, k-NN graph with k=2 (row-wise)")
 hamming_knn_row <- custom_rng(hamming_row, k=2)
 plot_graph(hamming_knn_row)
 
-print_line("Ex. 6 Hamming Distance Matrix, k-NN graph with k=2 (column-wise)")
-hamming_knn_col <- custom_rng(hamming_col, k=2)
-plot_graph(hamming_knn_col)
+print_line("Ex. 6 Jaccard Distance Matrix, k-NN graph with k=2 (column-wise)")
+jaccard_knn_row <- custom_rng(jaccard_row, k=2)
+plot_graph(jaccard_knn_row)
 
