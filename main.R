@@ -1,6 +1,7 @@
 library(igraph)
 library(cccd)
-
+install.packages("FNN")
+library(FNN)
 get_formatted_matrix <- function(dataset) {
     dataset_matrix <- as.matrix(dataset, nrow= nrow(data), ncol=ncol(data))
     #remove the target column
@@ -30,8 +31,8 @@ calc_hamming_row <- function(input_matrix){
 #calculate jaccard row-wise (Question 1a)
 calc_jaccard_row <- function(input_matrix){
     jaccard_measure_matrix <- matrix(0, nrow=nrow(input_matrix), ncol=nrow(input_matrix), dimnames = list(rownames(input_matrix), rownames(input_matrix)))
-    for(x in 1:nrow(input_matrix)){
-        for(y in 1:nrow(input_matrix)){
+    for(x in 1:nrow(input_matrix)) {
+        for(y in 1:nrow(input_matrix)) {
             jaccard_measure_matrix[x,y] <- calc_jaccard_measure(input_matrix[x,], input_matrix[y,])
         }
     }
@@ -63,10 +64,8 @@ calc_mst <- function(dist_matrix) {
     return(mst)
 }
 calc_rng <- function(dist_matrix) {
-    rng_output <- rng(dist_matrix)
-    print_line("=====================================")
+    rng_output <- custom_rng(dist_matrix)
     print(rng_output)
-    print_line("=====================================")
     return(rng_output)
 }
 get_graph_layout <- function(graph) {
@@ -89,9 +88,112 @@ save_graph <- function(graph, filename) {
 plot_graph <- function(graph) {
     filename <- deparse(substitute(graph))
     layout <- layout_with_fr(graph)
-    plot(graph, layout = layout, main=filename)
+    plot(graph, layout = layout, main=filename, edge.label=E(graph)$weight)
     save_graph(graph, filename)
     #graph
+}
+# Taken from the 'rng()' function in the cccd package, modified to include rownames
+# https://search.r-project.org/CRAN/refmans/cccd/html/rng.html
+custom_rng <- function(x=NULL,dx=NULL,r=1, method=NULL,usedeldir=TRUE,open=TRUE,k=NA,
+                       algorithm='cover_tree')
+{
+    if(is.na(k)){
+        if(is.null(dx)) {
+            if(is.null(x)) stop("One of x or dx must be given.")
+            dx <- as.matrix(proxy::dist(x,method=method))
+        } else {
+            usedeldir <- FALSE
+        }
+        n <- nrow(dx)
+        A <- matrix(0,nrow=n,ncol=n)
+
+        # Set rownames and colnames
+        if(!is.null(rownames(x))) {
+            rownames(A) <- rownames(x)
+            colnames(A) <- rownames(x)
+        }
+
+
+        if(is.vector(x)) x <- matrix(x,ncol=1)
+        if(usedeldir && ncol(x)==2){
+            del <- deldir(x[,1],x[,2])
+            for(edge in 1:nrow(del$delsgs)){
+                i <- del$delsgs[edge,5]
+                j <- del$delsgs[edge,6]
+                d <- min(apply(cbind(dx[i,-c(i,j)],dx[j,-c(i,j)]),1,max))
+                if(open){
+                    if(r*dx[i,j] < d){
+                        A[i,j] <- 1
+                        A[j,i] <- 1
+                    }
+                } else {
+                    if(r*dx[i,j] <= d){
+                        A[i,j] <- 1
+                        A[j,i] <- 1
+                    }
+                }
+            }
+        }
+        else{
+            diag(dx) <- Inf
+            for(i in 1:n){
+                for(j in setdiff(1:n,i)){
+                    d <- min(apply(cbind(dx[i,-c(i,j)],dx[j,-c(i,j)]),1,max))
+                    if(open){
+                        if(r*dx[i,j] < d){
+                            A[i,j] <- 1
+                            A[j,i] <- 1
+                        }
+                    } else {
+                        if(r*dx[i,j] <= d){
+                            A[i,j] <- 1
+                            A[j,i] <- 1
+                        }
+                    }
+                }
+            }
+        }
+        diag(A) <- 0
+        out <- graph_from_adjacency_matrix(A,mode="undirected")
+    } else {
+        if(is.null(x)) stop("x must not be null")
+        n <- nrow(x)
+        k <- min(k,n-1)
+        dx <- get.knn(x,k=k,algorithm=algorithm)
+        edges <- NULL
+        for(i in 1:n){
+            i.indices <- dx$nn.index[i,]
+            i.dists <- dx$nn.dist[i,]
+            for(j in 1:k){
+                rd <- r*i.dists[j]/2
+                j.indices <- dx$nn.index[i.indices[j],]
+                j.dists <- dx$nn.dist[i.indices[j],]
+                rd <- r*i.dists[j]
+                S <- setdiff(intersect(i.indices,j.indices),c(i,i.indices[j]))
+                if(length(S)>0){
+                    d <- Inf
+                    for(si in S){
+                        a <- which(i.indices == si)
+                        b <- which(j.indices == si)
+                        d <- min(d,max(i.dists[a],j.dists[b]))
+                    }
+                    if(rd < d){
+                        edges <- cbind(edges,c(i,i.indices[j]))
+                    }
+                }
+            }
+        }
+        out <- simplify(make_graph(edges=edges,n=n,directed=FALSE))
+        #Set rownames when k is provided
+        if(!is.null(rownames(x))) {
+            V(out)$name <- rownames(x)
+        }
+    }
+    if(!is.null(x)){
+        out$layout <- x
+    }
+    out$r <- r
+    out
 }
 
 dataset <- read.csv("USPresidency.csv")
@@ -153,10 +255,10 @@ jaccard_mst_row <- calc_mst(jaccard_row)
 plot_graph(jaccard_mst_row)
 
 print_line("Ex. 5 Hamming Distance Matrix, k-NN graph with k=2 (row-wise)")
-hamming_knn_row <- nng(hamming_row, k=2)
+hamming_knn_row <- custom_rng(hamming_row, k=2)
 plot_graph(hamming_knn_row)
 
 print_line("Ex. 6 Hamming Distance Matrix, k-NN graph with k=2 (column-wise)")
-hamming_knn_col <- nng(hamming_col, k=2)
+hamming_knn_col <- custom_rng(hamming_col, k=2)
 plot_graph(hamming_knn_col)
 
